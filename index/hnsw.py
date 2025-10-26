@@ -1,21 +1,32 @@
-# luma/index/hnsw.py
+# index/hnsw.py
 import faiss, numpy as np
 
 class HNSWIndex:
     def __init__(self, dim, m=64, efc=200, efs=128, metric=faiss.METRIC_INNER_PRODUCT):
         self.dim = dim
-        self.index = faiss.IndexHNSWFlat(dim, m, metric)
-        self.index.hnsw.efConstruction = efc
-        self.index.hnsw.efSearch = efs
-        self.ntotal = 0
+        base = faiss.IndexHNSWFlat(dim, m, metric)
+        base.hnsw.efConstruction = efc
+        base.hnsw.efSearch = efs
+        self.index = faiss.IndexIDMap2(base)
 
-    def add(self, vecs):
+    @property
+    def ntotal(self):
+        return self.index.ntotal
+
+    def add(self, vecs, ids):
         vecs = vecs.astype(np.float32)
-        faiss.normalize_L2(vecs)  # ensure normalized for dot-product
-        self.index.add(vecs)
-        ids = np.arange(self.ntotal, self.ntotal + vecs.shape[0], dtype=np.int64)
-        self.ntotal += vecs.shape[0]
-        return ids
+        faiss.normalize_L2(vecs)
+        ids = ids.astype(np.int64)
+        self.index.add_with_ids(vecs, ids)
+
+    def remove(self, ids: np.ndarray):
+        try:
+            ids = np.asarray(ids, dtype=np.int64)
+            sel = faiss.IDSelectorArray(ids.size, faiss.swig_ptr(ids))
+            removed = self.index.remove_ids(sel)
+            return int(removed)
+        except Exception:
+            return 0  # fallback: no removal
 
     def search(self, q, k=10):
         q = q.astype(np.float32)
@@ -28,8 +39,7 @@ class HNSWIndex:
 
     @staticmethod
     def load(path):
-        idx = HNSWIndex.__new__(HNSWIndex)
-        idx.index = faiss.read_index(str(path))
-        idx.dim = idx.index.d
-        idx.ntotal = idx.index.ntotal
-        return idx
+        obj = HNSWIndex.__new__(HNSWIndex)
+        obj.index = faiss.read_index(str(path))
+        obj.dim = obj.index.d
+        return obj

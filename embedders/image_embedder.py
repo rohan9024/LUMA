@@ -18,24 +18,18 @@ class ImageEmbedder:
     @torch.inference_mode()
     def embed_image(self, pil_images, batch_size=32):
         outs = []
-        model_dtype = next(self.model.parameters()).dtype  # expect float16 on CUDA
+        model_dtype = next(self.model.parameters()).dtype  # float16 on CUDA
         for i in range(0, len(pil_images), batch_size):
             batch = pil_images[i:i+batch_size]
-            t = torch.stack([self.preprocess(im) for im in batch])  # CPU, float32
-            # Move to device first, then force dtype to match model
+            t = torch.stack([self.preprocess(im) for im in batch])  # CPU float32
             t = t.to(self.device, non_blocking=True)
             if t.dtype != model_dtype:
                 t = t.to(dtype=model_dtype)
-
-            # Debug (optional): uncomment to verify
-            # print("embed_image dtypes -> input:", t.dtype, "model:", model_dtype, "device:", t.device)
-
             if self.device == "cuda":
                 with torch.autocast(device_type="cuda", dtype=torch.float16):
                     feats = self.model.encode_image(t)
             else:
                 feats = self.model.encode_image(t)
-
             feats = torch.nn.functional.normalize(feats, dim=-1)
             outs.append(feats.float().cpu().numpy())
         return np.vstack(outs)
